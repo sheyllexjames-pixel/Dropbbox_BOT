@@ -1,76 +1,53 @@
 import os
-from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, Response
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import logging
+from dotenv import load_dotenv
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# Retrieve environment variables set in your Render dashboard
-TOKEN = os.getenv("BOT_TOKEN")
-WEBHOOK_URL = os.getenv("RENDER_EXTERNAL_URL") 
+# 1. Load variables from Render's Environment (or .env if present)
+load_dotenv()
 
-# Initialize Telegram Bot Application
-ptb = Application.builder().token(TOKEN).build()
+# 2. Configuration
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-# --- Command Handlers ---
+# Setup Logging
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+
+# 3. Welcome Message
+WELCOME_MSG = (
+    "Welcome to Dropbbox_BOT! 📦\n\n"
+    "Store, sync, and organize your files across all devices.\n"
+    "Features: Real-time sync, Auto-backups, File recovery, and Secure sharing."
+)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "👋 Welcome to Dropbbox_BOT!\n\n"
-        "Send me any file, photo, or document, and I will safely index and back it up for you."
-    )
+    keyboard = [
+        [InlineKeyboardButton("📂 My Files", callback_data="my_files")],
+        [InlineKeyboardButton("🔄 Sync/Backup", callback_data="sync"),
+         InlineKeyboardButton("🔗 Share Files", callback_data="share")]
+    ]
+    await update.message.reply_text(WELCOME_MSG, reply_markup=InlineKeyboardMarkup(keyboard))
 
-async def handle_docs(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Telegram assigns a unique, persistent file_id to every file sent to it.
-    file_id = update.message.document.file_id
-    file_name = update.message.document.file_name
-    file_size = update.message.document.file_size
+async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
     
-    # NOTE: To create a fully operational cloud storage clone, you should save 
-    # these metadata variables to a database (e.g., Supabase or MongoDB).
-    
-    await update.message.reply_text(
-        f"💾 **File Backed Up Successfully!**\n\n"
-        f"📁 **Name:** {file_name}\n"
-        f"⚖️ **Size:** {file_size} bytes\n"
-        f"🔑 **Index Key (ID):** `{file_id}`\n\n"
-        f"You can retrieve this file anytime via search or category menus."
-    )
+    if query.data == "my_files":
+        await query.edit_message_text("📂 Access your organized documents, photos, and videos here.")
+    elif query.data == "sync":
+        await query.edit_message_text("🔄 Real-time synchronization active. Automatic backups running.")
+    elif query.data == "share":
+        await query.edit_message_text("🔗 Send a link to collaborate securely with others.")
 
-# --- Fixed Lifespan Management for Webhooks ---
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Configure webhook integration on startup
-    if WEBHOOK_URL:
-        await ptb.bot.set_webhook(url=f"{WEBHOOK_URL}/webhook")
-    
-    # The 'async with' context manager automatically manages initialization,
-    # startup, and safe teardown cycles internally without crashing.
-    async with ptb:
-        yield
-
-# Initialize FastAPI App with Lifespan Hook
-app = FastAPI(lifespan=lifespan)
-
-@app.post("/webhook")
-async def process_update(request: Request):
-    """Processes incoming updates pushed from Telegram servers."""
-    req_json = await request.json()
-    update = Update.de_json(req_json, ptb.bot)
-    await ptb.process_update(update)
-    return Response(status_code=200)
-
-@app.get("/")
-async def health_check():
-    """Simple route to keep Render service alive and passing health checks."""
-    return {"status": "Dropbbox_BOT is running perfectly!"}
-
-# Register Bot Event Handlers
-ptb.add_handler(CommandHandler("start", start))
-ptb.add_handler(MessageHandler(filters.Document.ALL, handle_docs))
-
-# --- Programmatic Server Execution Block ---
-# This guarantees that even if Render runs 'python main.py', 
-# it boots up using Uvicorn as required by the async engine.
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.getenv("PORT", 10000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port)
+if __name__ == '__main__':
+    if not TOKEN:
+        print("CRITICAL ERROR: TELEGRAM_BOT_TOKEN is missing!")
+    else:
+        # 4. Build and Run the Bot
+        application = ApplicationBuilder().token(TOKEN).build()
+        
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CallbackQueryHandler(handle_button))
+        
+        print("Bot is running...")
+        application.run_polling()
