@@ -39,7 +39,8 @@ async def handle_docs(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Configure webhook integration on startup
-    await ptb.bot.set_webhook(url=f"{WEBHOOK_URL}/webhook")
+    if WEBHOOK_URL:
+        await ptb.bot.set_webhook(url=f"{WEBHOOK_URL}/webhook")
     
     # The 'async with' context manager automatically manages initialization,
     # startup, and safe teardown cycles internally without crashing.
@@ -65,3 +66,11 @@ async def health_check():
 # Register Bot Event Handlers
 ptb.add_handler(CommandHandler("start", start))
 ptb.add_handler(MessageHandler(filters.Document.ALL, handle_docs))
+
+# --- Programmatic Server Execution Block ---
+# This guarantees that even if Render runs 'python main.py', 
+# it boots up using Uvicorn as required by the async engine.
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", 10000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
